@@ -29,6 +29,11 @@
 (def scrape-interval-ms (if-some [s (System/getenv "REDDIT_SCRAPE_INTERVAL_SECONDS")]
                           (* 1000 (Integer/parseInt s)) 60000))
 
+(def scrape-filter (if-some [f (System/getenv "REDDIT_SCRAPE_FILTER_REGEX")]
+                     (let [regex (re-pattern (str "(?i)" f))]
+                       #(re-find regex %))
+                     (constantly true)))
+
 (def oauth-url (format "https://www.reddit.com/api/v1/authorize?client_id=%s&response_type=code&state=random_string&redirect_uri=%s&duration=permanent&scope=read" oauth-client-id oauth-redirect-uri))
 (def user-agent (format "script:Get Subreddit:v1.1 (by /u/%s)" reddit-username))
 
@@ -77,7 +82,8 @@
             title (:title post)
             name (:name post)
             link (str "https://www.reddit.com" (:permalink post))]
-        (print (format "%s (%s):\n%s\n%s\n\n" name created-at title link))))
+        (when (scrape-filter title)
+          (print (format "%s (%s):\n%s\n%s\n\n" name created-at title link)))))
     last-seen))
 
 (defn epoch-seconds []
@@ -88,7 +94,6 @@
   (let [token (if (and oauth-access-token oauth-refresh-token)
                 (->Token oauth-access-token oauth-refresh-token) ; TODO: Check if these are valid
                 (exchange-code-for-tokens oauth-auth-code))]
-    ; (println (format "access token: %s\nrefresh token: %s" (:access-token token) (:refresh-token token)))
     (loop [last-seen nil]
       (let [last-seen  (get-new-posts token last-seen)]
         (println (format "Last seen (%s): %s" (stringify-epoch (epoch-seconds)) last-seen))
