@@ -26,6 +26,9 @@
 (def oauth-access-token (System/getenv "REDDIT_OAUTH_ACCESS_TOKEN"))
 (def oauth-refresh-token (System/getenv "REDDIT_OAUTH_REFRESH_TOKEN"))
 
+(def scrape-interval-ms (if-some [s (System/getenv "REDDIT_SCRAPE_INTERVAL_SECONDS")]
+                          (* 1000 (Integer/parseInt s)) 60000))
+
 (def oauth-url (format "https://www.reddit.com/api/v1/authorize?client_id=%s&response_type=code&state=random_string&redirect_uri=%s&duration=permanent&scope=read" oauth-client-id oauth-redirect-uri))
 (def user-agent (format "script:Get Subreddit:v1.1 (by /u/%s)" reddit-username))
 
@@ -53,7 +56,6 @@
         body (->  resp
                   :body
                   (json/parse-string true))]
-    (println resp)
     (->Token (:access_token body) (:refresh_token body))))
 
 ; (defn obtain-oauth-code [client_id]
@@ -86,12 +88,11 @@
   (let [token (if (and oauth-access-token oauth-refresh-token)
                 (->Token oauth-access-token oauth-refresh-token) ; TODO: Check if these are valid
                 (exchange-code-for-tokens oauth-auth-code))]
-    (println (format "access token: %s\nrefresh token: %s" (:access-token token) (:refresh-token token)))
+    ; (println (format "access token: %s\nrefresh token: %s" (:access-token token) (:refresh-token token)))
     (loop [last-seen nil]
       (let [last-seen  (get-new-posts token last-seen)]
         (println (format "Last seen (%s): %s" (stringify-epoch (epoch-seconds)) last-seen))
-        (Thread/sleep 60000) ; 60000 milliseconds
+        (Thread/sleep scrape-interval-ms)
         (recur last-seen)))))
 
 (-main *command-line-args*)
-
