@@ -4,6 +4,7 @@
             [taoensso.timbre :as log]
             [reddit-sub-follower.configs :as configs]))
 
+(def access-token-url "https://www.reddit.com/api/v1/access_token")
 (defn mk-user-agent [username]
   (format "script:Get Subreddit:v1.1 (by /u/%s)" username))
 
@@ -17,7 +18,7 @@
   (if (nil? code)
     (throw (new Exception "missing auth code"))
     (let [payload {:grant_type "authorization_code" :code code :redirect_uri redirect-uri}
-          resp (http/post "https://www.reddit.com/api/v1/access_token"
+          resp (http/post access-token-url
                           {:form-params payload
                            :basic-auth [client-id client-secret]})
           body (->  resp
@@ -41,16 +42,33 @@
 (defn refresh-reddit-token
   "Uses a refresh token to get a new access token from the Reddit API."
   [token]
-  (let [token-url "https://www.reddit.com/api/v1/access_token"
-        response  (http/post token-url
-                             {:form-params {:grant_type    "refresh_token"
-                                            :refresh_token (:refresh-token token)}
-                              :basic-auth  [(:client-id token) (:client-secret token)]})
-        body      (json/parse-string (:body response) true)
-        access-token (or (:access_token body)
-                         (throw (new Exception "could not refresh token")))]
-    (spit configs/oauth-access-token-file access-token)
-    (assoc token :access-token access-token)))
+  (try
+    (let [opts {:form-params {:grant_type    "refresh_token"
+                              :refresh_token (:refresh-token token)}
+                :headers     {"User-Agent" (mk-user-agent configs/reddit-username)
+                              :content-type "application/x-www-form-urlencoded"}
+                :basic-auth  [(:client-id token) (:client-secret token)]}
+          response  (http/post access-token-url opts)
+          body      (json/parse-string (:body response) true)
+          access-token (:access_token body)]
+
+      (if-not access-token
+        (do
+          (log/error "Refresh response did not contain an access token. Body:" body)
+          (throw (ex-info "Could not refresh token" {:response-body body})))
+
+        (do
+          (spit configs/oauth-access-token-file access-token)
+          (assoc token :access-token access-token))))
+
+    (catch Exception e
+      (let [error-data (ex-data e)
+            status     (:status error-data)
+            body       (:body error-data)]
+        (log/error "HTTP error occurred during token refresh, status:" status)
+        (log/error "Response Body:" body)
+        ;; Re-throw the exception or return the original token to signal failure
+        (throw (ex-info "Failed to refresh token" {:status status :body body} e))))))
 
 (defn get-new-posts
   "Fetches new Reddit posts, processes them, and returns the latest post ID."
@@ -84,12 +102,12 @@
                (catch Exception e
                  (let [error-data (ex-data e)
                        status (:status error-data)]
-                   ;; Check if the error is a 401 and we haven't retried yet
-                   (if (= 401 status)
+                   ;; Check if the error is a 401/403 and we haven't retried yet
+                   (if (or (= 401 status) (= 403 status))
                      (do
-                       (log/info "Token expired. Refreshing...")
+                       (log/info "Token expired, refreshing...")
                        (let [new-token (refresh-reddit-token token)]
-                         (log/info "Successfully got new token" token)
+                         (log/info "Successfully got new token" new-token)
                          ; Retry while resetting the reset counter
                          (fetch new-token)))
                      (throw (new Exception (str "Unexpected error: " (.getMessage e))))))))))]
