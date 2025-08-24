@@ -38,12 +38,26 @@
     (spit configs/oauth-refresh-token-file (:refresh-token token))
     token))
 
+(defn refresh-reddit-token
+  "Uses a refresh token to get a new access token from the Reddit API."
+  [token]
+  (let [token-url "https://www.reddit.com/api/v1/access_token"
+        response  (http/post token-url
+                             {:form-params {:grant_type    "refresh_token"
+                                            :refresh_token (:refresh-token token)}
+                              :basic-auth  [(:client-id token) (:client-secret token)]})
+        body      (json/parse-string (:body response) true)
+        access-token (or (:access_token body)
+                         (throw (new Exception "could not refresh token")))]
+    (spit configs/oauth-access-token-file access-token)
+    (assoc token :access-token access-token)))
+
 (defn get-new-posts
   "Fetches new Reddit posts, processes them, and returns the latest post ID."
   [{:keys [token username subreddit-name last-seen filter-fn output-fn]}]
   (letfn [(fetch
-            ([] (fetch 0))
-            ([num-retries]
+            ([token] (fetch token 0))
+            ([token num-retries]
              (try
                (let [url (format "https://oauth.reddit.com/r/%s/new" subreddit-name)
                      user-agent (mk-user-agent username)
@@ -60,11 +74,24 @@
                    (when (filter-fn (:title post))
                      (output-fn post)))
                  ;; Return the ID of the newest post for the next iteration
-                 new-last-seen)
+                 [token new-last-seen])
                (catch java.io.IOException e
                  (log/errorf "caught connection exception: %s\n" (.getMessage e))
                  (if (< num-retries 3)
-                   (do (log/error "retrying...\n") (fetch (+ 1 num-retries)))
+                   (do (log/error "retrying...\n") (fetch token (+ 1 num-retries)))
                    ;; On multiple errors, return the old last-seen ID to retry from the same point
-                   last-seen)))))]
-        (fetch)))
+                   [token last-seen]))
+               (catch Exception e
+                 (let [error-data (ex-data e)
+                       status (:status error-data)]
+                   ;; Check if the error is a 401 and we haven't retried yet
+                   (if (= 401 status)
+                     (do
+                       (log/info "Token expired. Refreshing...")
+                       (let [new-token (refresh-reddit-token token)]
+                         (log/info "Successfully got new token" token)
+                         ; Retry while resetting the reset counter
+                         (fetch new-token)))
+                     (throw (new Exception (str "Unexpected error: " (.getMessage e))))))))))]
+
+    (fetch token)))

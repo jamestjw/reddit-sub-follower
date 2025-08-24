@@ -25,18 +25,19 @@
         output-fn #(msg/create-message! message-ch configs/discord-channel-id :content (discord-msg-formatter %))
         initial-last-seen (utils/read-first-line configs/last-seen-file)]
     (try
-      (loop [last-seen initial-last-seen]
-        (let [last-seen (reddit/get-new-posts
-                         {:token reddit-token
-                          :username configs/reddit-username
-                          :subreddit-name configs/subreddit-name
-                          :last-seen last-seen
-                          :filter-fn configs/scrape-filter
-                          :output-fn output-fn})]
+      (loop [token reddit-token
+             last-seen initial-last-seen]
+        (let [[token last-seen] (reddit/get-new-posts
+                                 {:token token
+                                  :username configs/reddit-username
+                                  :subreddit-name configs/subreddit-name
+                                  :last-seen last-seen
+                                  :filter-fn configs/scrape-filter
+                                  :output-fn output-fn})]
           (log/info "Last seen:" last-seen)
           (spit configs/last-seen-file last-seen)
           (Thread/sleep configs/scrape-interval-ms)
-          (recur last-seen)))
+          (recur token last-seen)))
       (finally
         (msg/stop-connection! message-ch)
         (conn/disconnect-bot!  connection-ch)
