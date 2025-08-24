@@ -41,26 +41,30 @@
 (defn get-new-posts
   "Fetches new Reddit posts, processes them, and returns the latest post ID."
   [{:keys [token username subreddit-name last-seen filter-fn output-fn]}]
-  (letfn [(inner []
-            (try
-              (let [url (format "https://oauth.reddit.com/r/%s/new" subreddit-name)
-                    user-agent (mk-user-agent username)
-                    headers {:user-agent user-agent}
-                    resp (http/get url {:oauth-token (:access-token token)
-                                        :headers headers
-                                        :query-params {:before last-seen :limit 100}})
-                    body (-> resp :body (json/parse-string true) :data)
-                    new-last-seen (if-some [post (-> body :children first)]
-                                    (-> post :data :name)
-                                    last-seen)]
-                ;; Process posts in chronological order (oldest to newest)
-                (doseq [post (map :data (-> body :children reverse))]
-                  (when (filter-fn (:title post))
-                    (output-fn post)))
-                ;; Return the ID of the newest post for the next iteration
-                new-last-seen)
-              (catch java.io.IOException e
-                (log/errorf "caught connection exception: %s" (.getMessage e))
-                ;; On error, return the old last-seen ID to retry from the same point
-                last-seen)))]
-    (inner)))
+  (letfn [(fetch
+            ([] (fetch 0))
+            ([num-retries]
+             (try
+               (let [url (format "https://oauth.reddit.com/r/%s/new" subreddit-name)
+                     user-agent (mk-user-agent username)
+                     headers {:user-agent user-agent}
+                     resp (http/get url {:oauth-token (:access-token token)
+                                         :headers headers
+                                         :query-params {:before last-seen :limit 100}})
+                     body (-> resp :body (json/parse-string true) :data)
+                     new-last-seen (if-some [post (-> body :children first)]
+                                     (-> post :data :name)
+                                     last-seen)]
+                 ;; Process posts in chronological order (oldest to newest)
+                 (doseq [post (map :data (-> body :children reverse))]
+                   (when (filter-fn (:title post))
+                     (output-fn post)))
+                 ;; Return the ID of the newest post for the next iteration
+                 new-last-seen)
+               (catch java.io.IOException e
+                 (log/errorf "caught connection exception: %s\n" (.getMessage e))
+                 (if (< num-retries 3)
+                   (do (log/error "retrying...\n") (fetch (+ 1 num-retries)))
+                   ;; On multiple errors, return the old last-seen ID to retry from the same point
+                   last-seen)))))]
+        (fetch)))
