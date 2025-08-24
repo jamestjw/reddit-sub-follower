@@ -5,7 +5,9 @@
          '[cheshire.core :as json]
          '[clojure.core.async    :as async]
          '[discljord.connections :as conn]
-         '[discljord.messaging   :as msg])
+         '[discljord.messaging   :as msg]
+         '[taoensso.timbre :as log]
+         '[clojure.java.io :as io])
 
 (import '[java.time Instant ZonedDateTime ZoneId]
         '[java.time.format DateTimeFormatter])
@@ -48,6 +50,8 @@
 (def discord-channel-id (or (System/getenv "DISCORD_DEST_CHANNEL_ID")
                             (throw (new Exception "missing discord chan id"))))
 (def discord-intents #{:guilds :guild-messages})
+
+(def last-seen-file ".lastseen")
 
 (defrecord Token [access-token refresh-token])
 
@@ -117,6 +121,13 @@
         link (str "https://www.reddit.com" (:permalink post))]
     (format "%s\n%s" title link)))
 
+(defn read-first-line [file-path]
+  (try
+    (with-open [rdr (io/reader file-path)]
+      (first (line-seq rdr)))
+    (catch java.io.FileNotFoundException _
+      nil)))
+
 (defn -main
   [& args] ; The `& args` allows your program to accept command-line arguments
   (let [event-ch      (async/chan 100)
@@ -125,7 +136,8 @@
         reddit-token (if (and oauth-access-token oauth-refresh-token)
                        (->Token oauth-access-token oauth-refresh-token) ; TODO: Check if these are valid
                        (exchange-code-for-tokens oauth-auth-code))
-        output-fn #(msg/create-message! message-ch discord-channel-id :content %)]
+        output-fn #(msg/create-message! message-ch discord-channel-id :content %)
+        initial-last-seen (read-first-line last-seen-file)]
     (try
       ; (loop []
       ;   (let [[event-type event-data] (async/<!! event-ch)]
@@ -133,8 +145,10 @@
       ;     (println "Event type:" event-type)
       ;     (println "Event data:" (pr-str event-data))
       ;     (recur)))
-      (loop [last-seen nil]
+      (loop [last-seen initial-last-seen]
         (let [last-seen (get-new-posts reddit-token last-seen output-fn discord-msg-formatter)]
+          (log/info "Last seen:" last-seen)
+          (spit last-seen-file last-seen)
           (Thread/sleep scrape-interval-ms)
           (recur last-seen)))
       (finally
