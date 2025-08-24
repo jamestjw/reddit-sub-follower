@@ -1,5 +1,11 @@
-(require '[babashka.http-client :as http]
-         '[cheshire.core :as json])
+(ns reddit-sub-follower.core
+  (:gen-class))
+
+(require '[clj-http.client :as http]
+         '[cheshire.core :as json]
+         '[clojure.core.async    :as async]
+         '[discljord.connections :as conn]
+         '[discljord.messaging   :as msg])
 
 (import '[java.time Instant ZonedDateTime ZoneId]
         '[java.time.format DateTimeFormatter])
@@ -37,6 +43,12 @@
 (def oauth-url (format "https://www.reddit.com/api/v1/authorize?client_id=%s&response_type=code&state=random_string&redirect_uri=%s&duration=permanent&scope=read" oauth-client-id oauth-redirect-uri))
 (def user-agent (format "script:Get Subreddit:v1.1 (by /u/%s)" reddit-username))
 
+(def discord-token (or (System/getenv "DISCORD_BOT_TOKEN")
+                       (throw (new Exception "missing discord token"))))
+(def discord-channel-id (or (System/getenv "DISCORD_DEST_CHANNEL_ID")
+                            (throw (new Exception "missing discord chan id"))))
+(def discord-intents #{:guilds :guild-messages})
+
 (defrecord Token [access-token refresh-token])
 
 (defn stringify-epoch
@@ -66,7 +78,7 @@
 ; (defn obtain-oauth-code [client_id]
 ;   (let [url (format "https://www.reddit.com/api/v1/authorize?client_id=%s&response_type=code&state=random_string&redirect_uri=http://localhost&duration=permanent&scope=read" client_id)]))
 
-(defn get-new-posts [token last-seen]
+(defn get-new-posts [token last-seen output-fn formatter]
   (try
     (let [url (format "https://oauth.reddit.com/r/%s/new" subreddit-name)
           headers {:user-agent user-agent}
@@ -79,30 +91,53 @@
                     :data)
           last-seen (if-some [post (-> body :children first)] (-> post :data :name) last-seen)]
       (doseq [post (map :data (-> body :children reverse))]
-        (let [created-at (-> post :created_utc stringify-epoch)
-              title (:title post)
-              name (:name post)
-              link (str "https://www.reddit.com" (:permalink post))]
-          (when (scrape-filter title)
-            (print (format "%s (%s):\n%s\n%s\n\n" name created-at title link)))))
+        (when (scrape-filter (:title post))
+          (output-fn (formatter post))))
       last-seen)
     (catch java.net.ConnectException e
       (do
         (println (str "caught connection exception: " (.getMessage e)))
         last-seen))))
 
-(defn epoch-seconds []
-  (long (/ (System/currentTimeMillis) 1000)))
+; (defn -main
+;   [args]
+;   (let [token (if (and oauth-access-token oauth-refresh-token)
+;                 (->Token oauth-access-token oauth-refresh-token) ; TODO: Check if these are valid
+;                 (exchange-code-for-tokens oauth-auth-code))]
+;     (loop [last-seen nil]
+;       (let [last-seen  (get-new-posts token last-seen)]
+;         (println (format "Last seen (%s): %s" (stringify-epoch (epoch-seconds)) last-seen))
+;         (Thread/sleep scrape-interval-ms)
+;         (recur last-seen)))))
+;
+; (-main *command-line-args*)
+
+(defn discord-msg-formatter [post]
+  (let [title (:title post)
+        link (str "https://www.reddit.com" (:permalink post))]
+    (format "%s\n%s" title link)))
 
 (defn -main
-  [args]
-  (let [token (if (and oauth-access-token oauth-refresh-token)
-                (->Token oauth-access-token oauth-refresh-token) ; TODO: Check if these are valid
-                (exchange-code-for-tokens oauth-auth-code))]
-    (loop [last-seen nil]
-      (let [last-seen  (get-new-posts token last-seen)]
-        (println (format "Last seen (%s): %s" (stringify-epoch (epoch-seconds)) last-seen))
-        (Thread/sleep scrape-interval-ms)
-        (recur last-seen)))))
-
-(-main *command-line-args*)
+  [& args] ; The `& args` allows your program to accept command-line arguments
+  (let [event-ch      (async/chan 100)
+        connection-ch (conn/connect-bot! discord-token event-ch :intents discord-intents)
+        message-ch    (msg/start-connection! discord-token)
+        reddit-token (if (and oauth-access-token oauth-refresh-token)
+                       (->Token oauth-access-token oauth-refresh-token) ; TODO: Check if these are valid
+                       (exchange-code-for-tokens oauth-auth-code))
+        output-fn #(msg/create-message! message-ch discord-channel-id :content %)]
+    (try
+      ; (loop []
+      ;   (let [[event-type event-data] (async/<!! event-ch)]
+      ;     (println "🎉 NEW EVENT! 🎉")
+      ;     (println "Event type:" event-type)
+      ;     (println "Event data:" (pr-str event-data))
+      ;     (recur)))
+      (loop [last-seen nil]
+        (let [last-seen (get-new-posts reddit-token last-seen output-fn discord-msg-formatter)]
+          (Thread/sleep scrape-interval-ms)
+          (recur last-seen)))
+      (finally
+        (msg/stop-connection! message-ch)
+        (conn/disconnect-bot!  connection-ch)
+        (async/close!           event-ch)))))
