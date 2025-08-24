@@ -67,24 +67,29 @@
 ;   (let [url (format "https://www.reddit.com/api/v1/authorize?client_id=%s&response_type=code&state=random_string&redirect_uri=http://localhost&duration=permanent&scope=read" client_id)]))
 
 (defn get-new-posts [token last-seen]
-  (let [url (format "https://oauth.reddit.com/r/%s/new" subreddit-name)
-        headers {:user-agent user-agent}
-        resp (http/get url {:oauth-token (:access-token token)
-                            :headers headers
-                            :query-params {:before last-seen :limit 100}})
-        body (->  resp
-                  :body
-                  (json/parse-string true)
-                  :data)
-        last-seen (if-some [post (-> body :children first)] (-> post :data :name) last-seen)]
-    (doseq [post (map :data (-> body :children reverse))]
-      (let [created-at (-> post :created_utc stringify-epoch)
-            title (:title post)
-            name (:name post)
-            link (str "https://www.reddit.com" (:permalink post))]
-        (when (scrape-filter title)
-          (print (format "%s (%s):\n%s\n%s\n\n" name created-at title link)))))
-    last-seen))
+  (try
+    (let [url (format "https://oauth.reddit.com/r/%s/new" subreddit-name)
+          headers {:user-agent user-agent}
+          resp (http/get url {:oauth-token (:access-token token)
+                              :headers headers
+                              :query-params {:before last-seen :limit 100}})
+          body (->  resp
+                    :body
+                    (json/parse-string true)
+                    :data)
+          last-seen (if-some [post (-> body :children first)] (-> post :data :name) last-seen)]
+      (doseq [post (map :data (-> body :children reverse))]
+        (let [created-at (-> post :created_utc stringify-epoch)
+              title (:title post)
+              name (:name post)
+              link (str "https://www.reddit.com" (:permalink post))]
+          (when (scrape-filter title)
+            (print (format "%s (%s):\n%s\n%s\n\n" name created-at title link)))))
+      last-seen)
+    (catch java.net.ConnectException e
+      (do
+        (println (str "caught connection exception: " (.getMessage e)))
+        last-seen))))
 
 (defn epoch-seconds []
   (long (/ (System/currentTimeMillis) 1000)))
