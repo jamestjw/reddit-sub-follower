@@ -11,7 +11,6 @@
 
 (def discord-intents #{:guilds :guild-messages})
 
-(def last-seen-file ".lastseen")
 
 (defn discord-msg-formatter [post]
   (let [title (:title post)
@@ -25,13 +24,13 @@
         message-ch    (msg/start-connection! configs/discord-token)
         reddit-token (reddit/mk-token)
         output-fn #(msg/create-message! message-ch configs/discord-channel-id :content (discord-msg-formatter %))
-        initial-last-seen (utils/read-first-line last-seen-file)]
+        initial-last-seen (utils/read-first-line configs/last-seen-file)]
     (try
       (loop [last-seen initial-last-seen]
         (let [last-seen (reddit/get-new-posts reddit-token configs/reddit-username configs/subreddit-name
                                               last-seen configs/scrape-filter output-fn)]
           (log/info "Last seen:" last-seen)
-          (spit last-seen-file last-seen)
+          (spit configs/last-seen-file last-seen)
           (Thread/sleep configs/scrape-interval-ms)
           (recur last-seen)))
       (finally

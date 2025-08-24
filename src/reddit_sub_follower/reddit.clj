@@ -26,13 +26,17 @@
       (->Token (:access_token body) (:refresh_token body) client-id client-secret redirect-uri))))
 
 (defn mk-token []
-  (if (and configs/oauth-access-token configs/oauth-refresh-token)
-    (->Token configs/oauth-access-token configs/oauth-refresh-token
-             configs/oauth-client-id configs/oauth-client-secret
-             configs/oauth-redirect-uri) ; TODO: Check if these are valid
-    (exchange-code-for-tokens
-     configs/oauth-auth-code configs/oauth-client-id
-     configs/oauth-client-secret configs/oauth-redirect-uri)))
+  (let [token
+        (if (and configs/oauth-access-token configs/oauth-refresh-token)
+          (->Token configs/oauth-access-token configs/oauth-refresh-token
+                   configs/oauth-client-id configs/oauth-client-secret
+                   configs/oauth-redirect-uri) ; TODO: Check if these are valid
+          (exchange-code-for-tokens
+           configs/oauth-auth-code configs/oauth-client-id
+           configs/oauth-client-secret configs/oauth-redirect-uri))]
+    (spit configs/oauth-access-token-file (:access-token token))
+    (spit configs/oauth-refresh-token-file (:refresh-token token))
+    token))
 
 ; (defn obtain-oauth-code [client_id]
 ;   (let [url (format "https://www.reddit.com/api/v1/authorize?client_id=%s&response_type=code&state=random_string&redirect_uri=http://localhost&duration=permanent&scope=read" client_id)]))

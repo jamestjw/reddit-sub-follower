@@ -1,4 +1,10 @@
-(ns reddit-sub-follower.configs)
+(ns reddit-sub-follower.configs
+  (:require
+   [reddit-sub-follower.utils :as utils]))
+
+(def last-seen-file ".lastseen")
+(def oauth-access-token-file ".accesstoken")
+(def oauth-refresh-token-file ".refreshtoken")
 
 (def reddit-username (or (System/getenv "REDDIT_USERNAME")
                          (throw (new Exception "missing reddit username"))))
@@ -18,8 +24,10 @@
 ; TODO: initiate the login flow to get the code from the app if it doesn't exist
 (def oauth-auth-code (System/getenv "REDDIT_OAUTH_CODE"))
 
-(def oauth-access-token (System/getenv "REDDIT_OAUTH_ACCESS_TOKEN"))
-(def oauth-refresh-token (System/getenv "REDDIT_OAUTH_REFRESH_TOKEN"))
+(def oauth-access-token (or (utils/read-first-line oauth-access-token-file)
+                            (System/getenv "REDDIT_OAUTH_ACCESS_TOKEN")))
+(def oauth-refresh-token (or (utils/read-first-line oauth-refresh-token-file)
+                             (System/getenv "REDDIT_OAUTH_REFRESH_TOKEN")))
 
 (def scrape-interval-ms (if-some [s (System/getenv "REDDIT_SCRAPE_INTERVAL_SECONDS")]
                           (* 1000 (Integer/parseInt s)) 60000))
