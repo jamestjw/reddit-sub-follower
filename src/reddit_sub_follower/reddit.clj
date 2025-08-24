@@ -1,6 +1,7 @@
 (ns reddit-sub-follower.reddit
   (:require [clj-http.client :as http]
-            [cheshire.core :as json]))
+            [cheshire.core :as json]
+            [taoensso.timbre :as log]))
 
 (defn mk-user-agent [username]
   (format "script:Get Subreddit:v1.1 (by /u/%s)" username))
@@ -32,18 +33,15 @@
           resp (http/get url {:oauth-token (:access-token token)
                               :headers headers
                               :query-params {:before last-seen :limit 100}})
-          body (->  resp
-                    :body
-                    (json/parse-string true)
-                    :data)
+          body (->  resp :body (json/parse-string true) :data)
           last-seen (if-some [post (-> body :children first)] (-> post :data :name) last-seen)]
       (doseq [post (map :data (-> body :children reverse))]
         (when (filter-fn (:title post))
           (output-fn post)))
       last-seen)
-    (catch java.net.ConnectException e
+    (catch java.io.IOException e
       (do
-        (println (str "caught connection exception: " (.getMessage e)))
+        (log/errorf "caught connection exception: %s" (.getMessage e))
         last-seen))))
 
 ; (defn obtain-oauth-code [client_id]
