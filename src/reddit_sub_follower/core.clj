@@ -32,7 +32,6 @@
           :output-fn output-fn})
         last-seen (assoc last-seen subreddit-name
                          subreddit-last-seen)]
-    (log/infof "Last seen (%s): %s" subreddit-name subreddit-last-seen)
     (spit configs/last-seen-file last-seen)
     [token last-seen]))
 

@@ -84,6 +84,7 @@
                                          :headers headers
                                          :query-params {:before last-seen :limit 100}})
                      body (-> resp :body (json/parse-string true) :data)
+                     num-posts (-> body :children count)
                      new-last-seen (if-some [post (-> body :children first)]
                                      (-> post :data :name)
                                      last-seen)]
@@ -91,6 +92,8 @@
                  (doseq [post (map :data (-> body :children reverse))]
                    (when (filter-fn (:title post))
                      (output-fn post)))
+
+                 (log/infof "Num posts: %d, Last seen (%s): %s" num-posts subreddit-name new-last-seen)
                  ;; Return the ID of the newest post for the next iteration
                  [token new-last-seen])
                (catch java.io.IOException e
