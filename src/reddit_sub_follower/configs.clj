@@ -1,6 +1,7 @@
 (ns reddit-sub-follower.configs
   (:require
-   [reddit-sub-follower.utils :as utils]))
+   [reddit-sub-follower.utils :as utils]
+   [clojure.string :as str]))
 
 (def last-seen-file ".lastseen")
 (def oauth-access-token-file ".accesstoken")
@@ -9,8 +10,9 @@
 (def reddit-username (or (System/getenv "REDDIT_USERNAME")
                          (throw (new Exception "missing reddit username"))))
 
-(def subreddit-name (or (System/getenv "SUBREDDIT_NAME")
-                        (throw (new Exception "missing subreddit name"))))
+(def subreddit-names (-> (or (System/getenv "SUBREDDIT_NAME")
+                             (throw (new Exception "missing subreddit name")))
+                         (str/split #",")))
 
 (def oauth-client-id (or (System/getenv "REDDIT_OAUTH_CLIENT_ID")
                          (throw (new Exception "missing client ID"))))

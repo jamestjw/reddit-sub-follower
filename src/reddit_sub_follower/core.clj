@@ -7,7 +7,8 @@
    [taoensso.timbre :as log]
    [reddit-sub-follower.utils :as utils]
    [reddit-sub-follower.reddit :as reddit]
-   [reddit-sub-follower.configs :as configs]))
+   [reddit-sub-follower.configs :as configs]
+   [clojure.edn :as edn]))
 
 (def discord-intents #{:guilds :guild-messages})
 
@@ -16,6 +17,11 @@
         link (str "https://www.reddit.com" (:permalink post))]
     (format "%s\n%s" title link)))
 
+(defn read-last-seen-file [filename]
+  (try
+    (-> filename slurp edn/read-string)
+    (catch Exception _ {})))
+
 (defn -main
   [& args] ; The `& args` allows your program to accept command-line arguments
   (let [event-ch      (async/chan 100)
@@ -23,19 +29,27 @@
         message-ch    (msg/start-connection! configs/discord-token)
         reddit-token (reddit/mk-token)
         output-fn #(msg/create-message! message-ch configs/discord-channel-id :content (discord-msg-formatter %))
-        initial-last-seen (utils/read-first-line configs/last-seen-file)]
+        initial-last-seen (read-last-seen-file configs/last-seen-file)]
     (try
       (loop [token reddit-token
              last-seen initial-last-seen]
-        (let [[token last-seen] (reddit/get-new-posts
-                                 {:token token
-                                  :username configs/reddit-username
-                                  :subreddit-name configs/subreddit-name
-                                  :last-seen last-seen
-                                  :filter-fn configs/scrape-filter
-                                  :output-fn output-fn})]
-          (log/info "Last seen:" last-seen)
-          (spit configs/last-seen-file last-seen)
+        (let [[token last-seen]
+              (reduce (fn [[token last-seen] subreddit-name]
+                        (let [[token subreddit-last-seen]
+                              (reddit/get-new-posts
+                               {:token token
+                                :username configs/reddit-username
+                                :subreddit-name subreddit-name
+                                :last-seen (get last-seen subreddit-name)
+                                :filter-fn configs/scrape-filter
+                                :output-fn output-fn})
+                              last-seen (assoc last-seen subreddit-name
+                                               subreddit-last-seen)]
+                          (log/infof "Last seen (%s): %s" subreddit-name subreddit-last-seen)
+                          (spit configs/last-seen-file last-seen)
+                          [token last-seen]))
+                      [token last-seen]
+                      configs/subreddit-names)]
           (Thread/sleep configs/scrape-interval-ms)
           (recur token last-seen)))
       (finally
