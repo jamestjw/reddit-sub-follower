@@ -5,7 +5,6 @@
    [discljord.connections :as conn]
    [discljord.messaging   :as msg]
    [taoensso.timbre :as log]
-   [reddit-sub-follower.utils :as utils]
    [reddit-sub-follower.reddit :as reddit]
    [reddit-sub-follower.configs :as configs]
    [clojure.edn :as edn]))
@@ -22,6 +21,21 @@
     (-> filename slurp edn/read-string)
     (catch Exception _ {})))
 
+(defn do_one_subreddit [token last-seen subreddit-name output-fn]
+  (let [[token subreddit-last-seen]
+        (reddit/get-new-posts
+         {:token token
+          :username configs/reddit-username
+          :subreddit-name subreddit-name
+          :last-seen (get last-seen subreddit-name)
+          :filter-fn configs/scrape-filter
+          :output-fn output-fn})
+        last-seen (assoc last-seen subreddit-name
+                         subreddit-last-seen)]
+    (log/infof "Last seen (%s): %s" subreddit-name subreddit-last-seen)
+    (spit configs/last-seen-file last-seen)
+    [token last-seen]))
+
 (defn -main
   [& args] ; The `& args` allows your program to accept command-line arguments
   (let [event-ch      (async/chan 100)
@@ -35,21 +49,8 @@
              last-seen initial-last-seen]
         (let [[token last-seen]
               (reduce (fn [[token last-seen] subreddit-name]
-                        (let [[token subreddit-last-seen]
-                              (reddit/get-new-posts
-                               {:token token
-                                :username configs/reddit-username
-                                :subreddit-name subreddit-name
-                                :last-seen (get last-seen subreddit-name)
-                                :filter-fn configs/scrape-filter
-                                :output-fn output-fn})
-                              last-seen (assoc last-seen subreddit-name
-                                               subreddit-last-seen)]
-                          (log/infof "Last seen (%s): %s" subreddit-name subreddit-last-seen)
-                          (spit configs/last-seen-file last-seen)
-                          [token last-seen]))
-                      [token last-seen]
-                      configs/subreddit-names)]
+                        (do_one_subreddit token last-seen subreddit-name output-fn))
+                      [token last-seen] configs/subreddit-names)]
           (Thread/sleep configs/scrape-interval-ms)
           (recur token last-seen)))
       (finally
