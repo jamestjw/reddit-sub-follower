@@ -3,3 +3,4 @@
 .lastseen
 .*token
 target/
+.cache.db

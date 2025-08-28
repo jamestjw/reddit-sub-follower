@@ -3,7 +3,7 @@
    [reddit-sub-follower.utils :as utils]
    [clojure.string :as str]))
 
-(def last-seen-file ".lastseen")
+(def db-file ".cache.db")
 (def oauth-access-token-file ".accesstoken")
 (def oauth-refresh-token-file ".refreshtoken")
 
