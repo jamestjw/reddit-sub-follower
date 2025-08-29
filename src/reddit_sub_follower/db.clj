@@ -84,10 +84,10 @@ END;"))
   [subreddit-name]
   (let [result-row
         (sql/query @datasource
-                   ["SELECT updated_at FROM subreddit_last_seen WHERE subreddit_name = ?"
+                   ["SELECT strftime('%Y-%m-%d %H:%M:%S', updated_at) FROM subreddit_last_seen WHERE subreddit_name = ?"
                     subreddit-name])]
     (when-let [timestamp (-> result-row first :subreddit_last_seen/updated_at)]
-      (utils/parse-timestamp timestamp "yyyy-MM-dd HH:mm:ss.SSS"))))
+      (utils/parse-timestamp timestamp "yyyy-MM-dd HH:mm:ss"))))
 
 (defn update-last-seen!
   "Upserts a last-seen ID for a given subreddit."
