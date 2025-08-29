@@ -2,6 +2,7 @@
   (:require [clojure.java.io :as io]))
 
 (import '[java.time Instant ZonedDateTime ZoneId]
+        '[java.time LocalDateTime ZoneOffset]
         '[java.time.format DateTimeFormatter])
 
 (defn stringify-epoch
@@ -19,3 +20,8 @@
       (first (line-seq rdr)))
     (catch java.io.FileNotFoundException _
       nil)))
+
+(defn parse-timestamp [ts fmt]
+  (let [formatter (DateTimeFormatter/ofPattern fmt)]
+    (-> (LocalDateTime/parse ts formatter)
+        (.toInstant ZoneOffset/UTC))))

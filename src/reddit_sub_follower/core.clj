@@ -8,15 +8,25 @@
    [reddit-sub-follower.configs :as configs]
    [reddit-sub-follower.db :as db]))
 
-(def discord-intents #{:guilds :guild-messages})
+(import '[java.time Instant Duration])
 
 (defn discord-msg-formatter [post]
   (let [title (:title post)
         link (str "https://www.reddit.com" (:permalink post))]
     (format "%s\n%s" title link)))
 
+(defn no-update-for-too-long? [subreddit-name]
+  (let [updated-at (db/get-updated-at-for-subreddit subreddit-name)]
+    (if-not updated-at
+      false
+      (let [six-hours-ago (.minus (Instant/now) (Duration/ofHours 6))]
+        (.isBefore updated-at six-hours-ago)))))
+
 (defn do_one_subreddit [token subreddit-name output-fn]
-  (let [prev-last-seen (db/get-last-seen-for-subreddit subreddit-name)
+  (let [prev-last-seen
+        (if (no-update-for-too-long? subreddit-name)
+          nil ; Try fetching latest
+          (db/get-last-seen-for-subreddit subreddit-name))
         [token new-last-seen]
         (reddit/get-new-posts
          {:token token
@@ -32,7 +42,7 @@
 (defn -main
   [& args] ; The `& args` allows your program to accept command-line arguments
   (let [event-ch      (async/chan 100)
-        connection-ch (conn/connect-bot! configs/discord-token event-ch :intents discord-intents)
+        connection-ch (conn/connect-bot! configs/discord-token event-ch :intents configs/discord-intents)
         message-ch    (msg/start-connection! configs/discord-token)
         reddit-token (reddit/mk-token)
         output-fn #(msg/create-message! message-ch configs/discord-channel-id :content (discord-msg-formatter %))]

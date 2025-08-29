@@ -2,7 +2,8 @@
   (:require [next.jdbc :as jdbc]
             [next.jdbc.sql :as sql]
             [reddit-sub-follower.configs :as configs]
-            [taoensso.timbre :as log])
+            [taoensso.timbre :as log]
+            [reddit-sub-follower.utils :as utils])
   (:import (com.zaxxer.hikari HikariConfig HikariDataSource)))
 
 ;; --- Database Configuration ---
@@ -76,6 +77,17 @@ END;"))
                    ["SELECT last_seen_id FROM subreddit_last_seen WHERE subreddit_name = ?"
                     subreddit-name])]
     (-> result-row first :subreddit_last_seen/last_seen_id)))
+
+(defn get-updated-at-for-subreddit
+  "Fetches the updated_at timestamp for a subreddit.
+  Returns a java.time.Instant object, or nil if not found."
+  [subreddit-name]
+  (let [result-row
+        (sql/query @datasource
+                   ["SELECT updated_at FROM subreddit_last_seen WHERE subreddit_name = ?"
+                    subreddit-name])]
+    (when-let [timestamp (-> result-row first :subreddit_last_seen/updated_at)]
+      (utils/parse-timestamp timestamp "yyyy-MM-dd HH:mm:ss.SSS"))))
 
 (defn update-last-seen!
   "Upserts a last-seen ID for a given subreddit."

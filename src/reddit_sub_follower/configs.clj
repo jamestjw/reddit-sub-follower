@@ -43,3 +43,4 @@
                        (throw (new Exception "missing discord token"))))
 (def discord-channel-id (or (System/getenv "DISCORD_DEST_CHANNEL_ID")
                             (throw (new Exception "missing discord channel id"))))
+(def discord-intents #{:guilds :guild-messages})
