@@ -7,9 +7,6 @@
   (:import (com.zaxxer.hikari HikariConfig HikariDataSource)))
 
 ;; --- Database Configuration ---
-;; Defines the location of your SQLite file.
-(def db-spec {:dbtype "sqlite" :dbname "cache.db"})
-
 (defn- ->datasource
   "Creates a HikariCP pooled connection datasource."
   [db-file-path]
@@ -52,7 +49,9 @@ CREATE TABLE IF NOT EXISTS subreddit_last_seen (
 CREATE TRIGGER update_subreddit_last_seen_updated_at_trigger
 AFTER UPDATE ON subreddit_last_seen
 BEGIN
-   UPDATE subreddit_last_seen SET updated_at=STRFTIME('%Y-%m-%d %H:%M:%f', 'NOW') WHERE subreddit_name = NEW.subreddit_name;
+   UPDATE subreddit_last_seen
+   SET updated_at=STRFTIME('%Y-%m-%d %H:%M:%f', 'NOW')
+   WHERE subreddit_name = NEW.subreddit_name;
 END;"))
 
 ;; --- Data Access Functions ---
@@ -74,7 +73,8 @@ END;"))
   [subreddit-name]
   (let [result-row
         (sql/query @datasource
-                   ["SELECT last_seen_id FROM subreddit_last_seen WHERE subreddit_name = ?"
+                   ["SELECT last_seen_id FROM subreddit_last_seen
+                     WHERE subreddit_name = ?"
                     subreddit-name])]
     (-> result-row first :subreddit_last_seen/last_seen_id)))
 
@@ -84,9 +84,10 @@ END;"))
   [subreddit-name]
   (let [result-row
         (sql/query @datasource
-                   ["SELECT strftime('%Y-%m-%d %H:%M:%S', updated_at) FROM subreddit_last_seen WHERE subreddit_name = ?"
+                   ["SELECT strftime('%Y-%m-%d %H:%M:%S', updated_at) AS updated_at
+                    FROM subreddit_last_seen WHERE subreddit_name = ?"
                     subreddit-name])]
-    (when-let [timestamp (-> result-row first :subreddit_last_seen/updated_at)]
+    (when-let [timestamp (-> result-row first :updated_at)]
       (utils/parse-timestamp timestamp "yyyy-MM-dd HH:mm:ss"))))
 
 (defn update-last-seen!
