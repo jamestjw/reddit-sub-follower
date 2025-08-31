@@ -41,6 +41,7 @@
 
 (defn -main
   [& args] ; The `& args` allows your program to accept command-line arguments
+  (configs/validate-configs!)
   (let [event-ch      (async/chan 100)
         connection-ch (conn/connect-bot! configs/discord-token event-ch :intents configs/discord-intents)
         message-ch    (msg/start-connection! configs/discord-token)

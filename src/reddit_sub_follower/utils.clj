@@ -1,9 +1,16 @@
 (ns reddit-sub-follower.utils
   (:require [clojure.java.io :as io]))
 
-(import '[java.time Instant ZonedDateTime ZoneId]
+(import '[java.nio.file Paths]
+        '[java.time Instant ZonedDateTime ZoneId]
         '[java.time LocalDateTime ZoneOffset]
         '[java.time.format DateTimeFormatter])
+
+(defn join-paths
+  "Joins path components into a single, platform-correct path string."
+  [& parts]
+  (-> (Paths/get (first parts) (into-array String (rest parts)))
+      (.toString)))
 
 (defn stringify-epoch
   "Converts a Unix epoch timestamp (seconds) to a formatted string in the local timezone."
