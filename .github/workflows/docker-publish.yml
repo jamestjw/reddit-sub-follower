@@ -1,0 +1,35 @@
+# This workflow builds and pushes a Docker image to the GitHub Container Registry (GHCR)
+name: Docker Publish
+# Controls when the action will run.
+# This workflow runs on every push to the "main" branch.
+on:
+  push:
+    branches: ["main"]
+env:
+  # Define the image name. The GITHUB_REPOSITORY variable is your username/repo_name.
+  IMAGE_NAME: ghcr.io/${{ github.repository }}
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    # Grant permissions for the GITHUB_TOKEN to write to ghcr.io
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Log in to the GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          # Tags the image with the latest commit SHA and a "latest" tag
+          tags: |
+            ${{ env.IMAGE_NAME }}:${{ github.sha }}
+            ${{ env.IMAGE_NAME }}:latest
