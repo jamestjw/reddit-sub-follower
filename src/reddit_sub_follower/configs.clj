@@ -32,10 +32,10 @@
 (def scrape-interval-ms (if-some [s (System/getenv "REDDIT_SCRAPE_INTERVAL_SECONDS")]
                           (* 1000 (Integer/parseInt s)) 60000))
 
-(def scrape-filter (if-some [f (System/getenv "REDDIT_SCRAPE_FILTER_REGEX")]
-                     (let [regex (re-pattern (str "(?i)" f))]
-                       #(re-find regex %))
-                     (constantly true)))
+(def scrape-query-filter (if-some [f (System/getenv "REDDIT_SCRAPE_FILTER_REGEX")]
+                           (let [regex (re-pattern (str "(?i)" f))]
+                             #(re-find regex %))
+                           (constantly true)))
 
 (def discord-token (System/getenv "DISCORD_BOT_TOKEN"))
 (def discord-channel-id (System/getenv "DISCORD_DEST_CHANNEL_ID"))

@@ -44,6 +44,13 @@ CREATE TABLE IF NOT EXISTS subreddit_last_seen (
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )"])
+  (jdbc/execute! @datasource ["
+CREATE TABLE IF NOT EXISTS seen_posts (
+  post_id TEXT NOT NULL,
+  subreddit_name TEXT NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (post_id, subreddit_name)
+)"])
   (ensure-trigger-exists "update_subreddit_last_seen_updated_at_trigger"
                          "
 CREATE TRIGGER update_subreddit_last_seen_updated_at_trigger
@@ -102,3 +109,19 @@ END;"))
     DO UPDATE SET
     last_seen_id = excluded.last_seen_id;"
     subreddit-name last-seen-id]))
+
+(defn add-seen-post!
+  "Adds a record of a seen post to the database."
+  [post-id subreddit-name]
+  (sql/insert! @datasource :seen_posts
+               {:post_id        post-id
+                :subreddit_name subreddit-name}))
+
+(defn post-seen?
+  "Checks if a post has been previously seen.
+  Returns true if the post_id exists for the given subreddit, false otherwise."
+  [post-id subreddit-name]
+  (let [result (sql/query @datasource
+                          ["SELECT 1 FROM seen_posts WHERE post_id = ? AND subreddit_name = ?"
+                           post-id subreddit-name])]
+    (not (empty? result))))

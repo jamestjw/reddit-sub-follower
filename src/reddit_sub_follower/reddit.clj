@@ -90,7 +90,7 @@
                                      last-seen)]
                  ;; Process posts in chronological order (oldest to newest)
                  (doseq [post (map :data (-> body :children reverse))]
-                   (when (filter-fn (:title post))
+                   (when (filter-fn (:name post) (:title post))
                      (output-fn post)))
 
                  (log/infof "Num posts: %d, Last seen (%s): %s" num-posts subreddit-name new-last-seen)

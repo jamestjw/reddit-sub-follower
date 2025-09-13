@@ -23,21 +23,27 @@
         (.isBefore updated-at six-hours-ago)))))
 
 (defn do_one_subreddit [token subreddit-name output-fn]
-  (let [prev-last-seen
-        (if (no-update-for-too-long? subreddit-name)
-          nil ; Try fetching latest
-          (db/get-last-seen-for-subreddit subreddit-name))
-        [token new-last-seen]
-        (reddit/get-new-posts
-         {:token token
-          :username configs/reddit-username
-          :subreddit-name subreddit-name
-          :last-seen prev-last-seen
-          :filter-fn configs/scrape-filter
-          :output-fn output-fn})]
-    (when (not= prev-last-seen new-last-seen)
-      (db/update-last-seen! subreddit-name new-last-seen))
-    token))
+  (letfn [(post-filter [id title]
+            (and (configs/scrape-query-filter title)
+                 (not (db/post-seen? id subreddit-name))))
+          (handle-post [post]
+            (do (output-fn post)
+                (db/add-seen-post! (:name post) subreddit-name)))]
+    (let [prev-last-seen
+          (if (no-update-for-too-long? subreddit-name)
+            nil ; Try fetching latest
+            (db/get-last-seen-for-subreddit subreddit-name))
+          [token new-last-seen]
+          (reddit/get-new-posts
+           {:token token
+            :username configs/reddit-username
+            :subreddit-name subreddit-name
+            :last-seen prev-last-seen
+            :filter-fn post-filter
+            :output-fn handle-post})]
+      (when (not= prev-last-seen new-last-seen)
+        (db/update-last-seen! subreddit-name new-last-seen))
+      token)))
 
 (defn -main
   [& args] ; The `& args` allows your program to accept command-line arguments
