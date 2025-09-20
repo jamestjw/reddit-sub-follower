@@ -37,6 +37,9 @@
                              #(re-find regex %))
                            (constantly true)))
 
+(def no-data-reset-interval-secs
+  (Integer/parseInt (or (System/getenv "NO_DATA_RESET_INTERVAL_SECONDS") "3600")))
+
 (def discord-token (System/getenv "DISCORD_BOT_TOKEN"))
 (def discord-channel-id (System/getenv "DISCORD_DEST_CHANNEL_ID"))
 (def discord-intents #{:guilds :guild-messages})

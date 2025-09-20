@@ -19,8 +19,8 @@
   (let [updated-at (db/get-updated-at-for-subreddit subreddit-name)]
     (if-not updated-at
       false
-      (let [six-hours-ago (.minus (Instant/now) (Duration/ofHours 6))]
-        (.isBefore updated-at six-hours-ago)))))
+      (let [reset-time (.minus (Instant/now) (Duration/ofSeconds configs/no-data-reset-interval-secs))]
+        (.isBefore updated-at reset-time)))))
 
 (defn do_one_subreddit [token subreddit-name output-fn]
   (letfn [(post-filter [id title]
