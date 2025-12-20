@@ -4,6 +4,7 @@
    [clojure.core.async    :as async]
    [discljord.connections :as conn]
    [discljord.messaging   :as msg]
+   [taoensso.timbre :as log]
    [reddit-sub-follower.reddit :as reddit]
    [reddit-sub-follower.configs :as configs]
    [reddit-sub-follower.db :as db]))
@@ -59,7 +60,11 @@
       (loop [token reddit-token]
         (let [token
               (reduce (fn [token subreddit-name]
-                        (do_one_subreddit token subreddit-name output-fn))
+                        (try
+                          (do_one_subreddit token subreddit-name output-fn)
+                          (catch Exception e
+                            (log/error "Failed to scrape" subreddit-name ":" (.getMessage e))
+                            token)))
                       token configs/subreddit-names)]
           (Thread/sleep configs/scrape-interval-ms)
           (recur token)))
