@@ -40,9 +40,7 @@
 (def no-data-reset-interval-secs
   (Integer/parseInt (or (System/getenv "NO_DATA_RESET_INTERVAL_SECONDS") "3600")))
 
-(def discord-token (System/getenv "DISCORD_BOT_TOKEN"))
-(def discord-channel-id (System/getenv "DISCORD_DEST_CHANNEL_ID"))
-(def discord-intents #{:guilds :guild-messages})
+(def discord-webhook-url (System/getenv "DISCORD_WEBHOOK_URL"))
 
 (defn validate-configs! []
   (when-not reddit-username
@@ -57,7 +55,5 @@
     (throw (new Exception "missing access token")))
   (when-not oauth-redirect-uri
     (throw (new Exception "missing redirect uri")))
-  (when-not discord-token
-    (throw (new Exception "missing discord token")))
-  (when-not discord-channel-id
-    (throw (new Exception "missing discord channel ID"))))
+  (when-not discord-webhook-url
+    (throw (new Exception "missing discord webhook url"))))

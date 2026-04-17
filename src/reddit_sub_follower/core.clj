@@ -1,9 +1,8 @@
 (ns reddit-sub-follower.core
   (:gen-class)
   (:require
-   [clojure.core.async    :as async]
-   [discljord.connections :as conn]
-   [discljord.messaging   :as msg]
+   [clj-http.client :as http]
+   [cheshire.core :as json]
    [taoensso.timbre :as log]
    [reddit-sub-follower.reddit :as reddit]
    [reddit-sub-follower.configs :as configs]
@@ -15,6 +14,16 @@
   (let [title (:title post)
         link (str "https://www.reddit.com" (:permalink post))]
     (format "%s\n%s" title link)))
+
+(defn send-discord-webhook! [message]
+  (let [resp (http/post configs/discord-webhook-url
+                        {:headers {"Content-Type" "application/json"}
+                         :body (json/generate-string {:content message})
+                         :throw-exceptions false})]
+    (when-not (<= 200 (:status resp) 299)
+      (throw (ex-info "Discord webhook request failed"
+                      {:status (:status resp)
+                       :body (:body resp)})))))
 
 (defn no-update-for-too-long? [subreddit-name]
   (let [updated-at (db/get-updated-at-for-subreddit subreddit-name)]
@@ -49,26 +58,21 @@
 (defn -main
   [& args] ; The `& args` allows your program to accept command-line arguments
   (configs/validate-configs!)
-  (let [event-ch      (async/chan 100)
-        connection-ch (conn/connect-bot! configs/discord-token event-ch :intents configs/discord-intents)
-        message-ch    (msg/start-connection! configs/discord-token)
-        reddit-token (reddit/mk-token)
-        output-fn #(msg/create-message! message-ch configs/discord-channel-id :content (discord-msg-formatter %))]
+  (let [reddit-token (reddit/mk-token)
+        output-fn #(send-discord-webhook! (discord-msg-formatter %))]
     (db/init-db!)
 
-    (try
-      (loop [token reddit-token]
-        (let [token
-              (reduce (fn [token subreddit-name]
-                        (try
-                          (do_one_subreddit token subreddit-name output-fn)
-                          (catch Exception e
-                            (log/error "Failed to scrape" subreddit-name ":" (.getMessage e))
-                            token)))
-                      token configs/subreddit-names)]
-          (Thread/sleep configs/scrape-interval-ms)
-          (recur token)))
-      (finally
-        (msg/stop-connection! message-ch)
-        (conn/disconnect-bot!  connection-ch)
-        (async/close!           event-ch)))))
+    (loop [token reddit-token]
+      (let [token
+            (reduce (fn [token subreddit-name]
+                      (try
+                        (do_one_subreddit token subreddit-name output-fn)
+                        (catch Exception e
+                          (log/error e "Failed to scrape"
+                                     subreddit-name
+                                     "message=" (.getMessage e)
+                                     "details=" (pr-str (ex-data e)))
+                          token)))
+                    token configs/subreddit-names)]
+        (Thread/sleep configs/scrape-interval-ms)
+        (recur token)))))
