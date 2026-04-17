@@ -55,24 +55,29 @@
         (db/update-last-seen! subreddit-name new-last-seen))
       token)))
 
+(defn scrape-once [token output-fn]
+  (reduce (fn [token subreddit-name]
+            (try
+              (do_one_subreddit token subreddit-name output-fn)
+              (catch Exception e
+                (log/error e "Failed to scrape"
+                           subreddit-name
+                           "message=" (.getMessage e)
+                           "details=" (pr-str (ex-data e)))
+                token)))
+          token
+          configs/subreddit-names))
+
 (defn -main
-  [& args] ; The `& args` allows your program to accept command-line arguments
+  [& args]
   (configs/validate-configs!)
   (let [reddit-token (reddit/mk-token)
-        output-fn #(send-discord-webhook! (discord-msg-formatter %))]
+        output-fn #(send-discord-webhook! (discord-msg-formatter %))
+        run-once? (some #{"--once" "-1"} args)]
     (db/init-db!)
-
-    (loop [token reddit-token]
-      (let [token
-            (reduce (fn [token subreddit-name]
-                      (try
-                        (do_one_subreddit token subreddit-name output-fn)
-                        (catch Exception e
-                          (log/error e "Failed to scrape"
-                                     subreddit-name
-                                     "message=" (.getMessage e)
-                                     "details=" (pr-str (ex-data e)))
-                          token)))
-                    token configs/subreddit-names)]
-        (Thread/sleep configs/scrape-interval-ms)
-        (recur token)))))
+    (if run-once?
+      (scrape-once reddit-token output-fn)
+      (loop [token reddit-token]
+        (let [next-token (scrape-once token output-fn)]
+          (Thread/sleep configs/scrape-interval-ms)
+          (recur next-token))))))

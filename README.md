@@ -7,6 +7,11 @@ With REPL
 dotenv clj -- -M:run
 ```
 
+Run a single scrape cycle (useful for cron):
+```bash
+dotenv clj -- -M:run --once
+```
+
 Compile and run JAR
 
 ```bash
