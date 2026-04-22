@@ -10,14 +10,16 @@
              :get-updated-at-for-subreddit sqlite/get-updated-at-for-subreddit
              :update-last-seen! sqlite/update-last-seen!
              :add-seen-post! sqlite/add-seen-post!
-             :post-seen? sqlite/post-seen?}
+             :post-seen? sqlite/post-seen?
+             :prune-seen-posts! sqlite/prune-seen-posts!}
    "postgres" {:init-db! postgres/init-db!
                :load-all-last-seen postgres/load-all-last-seen
                :get-last-seen-for-subreddit postgres/get-last-seen-for-subreddit
                :get-updated-at-for-subreddit postgres/get-updated-at-for-subreddit
                :update-last-seen! postgres/update-last-seen!
                :add-seen-post! postgres/add-seen-post!
-               :post-seen? postgres/post-seen?}})
+               :post-seen? postgres/post-seen?
+               :prune-seen-posts! postgres/prune-seen-posts!}})
 
 (defn- impl []
   (or (get implementations configs/database-backend)
@@ -45,3 +47,6 @@
 
 (defn post-seen? [post-id subreddit-name]
   ((:post-seen? (impl)) post-id subreddit-name))
+
+(defn prune-seen-posts! [retention-days]
+  ((:prune-seen-posts! (impl)) retention-days))

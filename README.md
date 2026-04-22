@@ -9,6 +9,11 @@
 - `sqlite` (default): set `DB_FILE`
 - `postgres`: set `DATABASE_HOST`, `DATABASE_PORT`, `DATABASE_NAME`, `DATABASE_USER`, `DATABASE_PASSWORD`
 
+Seen-post cleanup:
+
+- `SEEN_POSTS_RETENTION_DAYS` (default `7`)
+- `SEEN_POSTS_CLEANUP_INTERVAL_SECONDS` (default `21600`)
+
 With REPL
 ```bash
 dotenv clj -- -M:run

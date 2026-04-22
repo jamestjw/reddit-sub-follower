@@ -59,6 +59,26 @@
           token
           configs/subreddit-names))
 
+(defn prune-seen-posts! []
+  (let [deleted-count (db/prune-seen-posts! configs/seen-posts-retention-days)]
+    (when (pos? deleted-count)
+      (log/info {:event :seen_posts_pruned
+                 :deleted-count deleted-count
+                 :retention-days configs/seen-posts-retention-days
+                 :database-backend configs/database-backend}))
+    deleted-count))
+
+(defn maybe-run-seen-posts-cleanup [last-cleanup-ms]
+  (let [now-ms (System/currentTimeMillis)
+        cleanup-interval-ms (* 1000 configs/seen-posts-cleanup-interval-secs)
+        should-cleanup? (or (nil? last-cleanup-ms)
+                            (>= (- now-ms last-cleanup-ms) cleanup-interval-ms))]
+    (if should-cleanup?
+      (do
+        (prune-seen-posts!)
+        now-ms)
+      last-cleanup-ms)))
+
 (defn -main
   [& args]
   (configs/validate-configs!)
@@ -67,8 +87,12 @@
         run-once? (some #{"--once" "-1"} args)]
     (db/init-db!)
     (if run-once?
-      (scrape-once reddit-token output-fn)
-      (loop [token reddit-token]
-        (let [next-token (scrape-once token output-fn)]
+      (do
+        (maybe-run-seen-posts-cleanup nil)
+        (scrape-once reddit-token output-fn))
+      (loop [token reddit-token
+             last-cleanup-ms nil]
+        (let [last-cleanup-ms (maybe-run-seen-posts-cleanup last-cleanup-ms)
+              next-token (scrape-once token output-fn)]
           (Thread/sleep configs/scrape-interval-ms)
-          (recur next-token))))))
+          (recur next-token last-cleanup-ms))))))

@@ -119,3 +119,9 @@ last_seen_id = excluded.last_seen_id;"
                                post-id subreddit-name]
                               {:builder-fn rs/as-unqualified-lower-maps})]
     (not (empty? result))))
+
+(defn prune-seen-posts! [retention-days]
+  (let [result (jdbc/execute-one! @datasource
+                                  ["DELETE FROM seen_posts WHERE created_at < (CURRENT_TIMESTAMP - (? * INTERVAL '1 day'))"
+                                   retention-days])]
+    (long (or (:next.jdbc/update-count result) 0))))

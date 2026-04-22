@@ -46,6 +46,12 @@
 (def no-data-reset-interval-secs
   (Integer/parseInt (or (System/getenv "NO_DATA_RESET_INTERVAL_SECONDS") "3600")))
 
+(def seen-posts-retention-days
+  (Integer/parseInt (or (System/getenv "SEEN_POSTS_RETENTION_DAYS") "7")))
+
+(def seen-posts-cleanup-interval-secs
+  (Integer/parseInt (or (System/getenv "SEEN_POSTS_CLEANUP_INTERVAL_SECONDS") "21600")))
+
 (def discord-webhook-url (System/getenv "DISCORD_WEBHOOK_URL"))
 
 (defn validate-configs! []
@@ -61,6 +67,10 @@
     (throw (new Exception "missing access token")))
   (when-not oauth-redirect-uri
     (throw (new Exception "missing redirect uri")))
+  (when (<= seen-posts-retention-days 0)
+    (throw (new Exception "SEEN_POSTS_RETENTION_DAYS must be > 0")))
+  (when (<= seen-posts-cleanup-interval-secs 0)
+    (throw (new Exception "SEEN_POSTS_CLEANUP_INTERVAL_SECONDS must be > 0")))
   (when-not (#{"sqlite" "postgres"} database-backend)
     (throw (new Exception "invalid DATABASE_BACKEND, expected one of: sqlite, postgres")))
   (when (= database-backend "postgres")

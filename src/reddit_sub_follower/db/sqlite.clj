@@ -22,9 +22,11 @@
                                         {:builder-fn rs/as-unqualified-lower-maps})]
     (if (empty? existing-trigger)
       (do
-        (log/info (str "Trigger '" trigger-name "' not found. Creating it..."))
+        (log/info {:event :sqlite_trigger_creating
+                   :trigger-name trigger-name})
         (jdbc/execute! @datasource [create-trigger-sql]))
-      (log/info (str "Trigger '" trigger-name "' already exists. Skipping.")))))
+      (log/info {:event :sqlite_trigger_exists
+                 :trigger-name trigger-name}))))
 
 (defn init-db! []
   (jdbc/execute! @datasource
@@ -100,3 +102,13 @@ END;"))
                                post-id subreddit-name]
                               {:builder-fn rs/as-unqualified-lower-maps})]
     (not (empty? result))))
+
+(defn prune-seen-posts! [retention-days]
+  (with-open [conn (jdbc/get-connection @datasource)]
+    (jdbc/execute! conn
+                   ["DELETE FROM seen_posts WHERE created_at < datetime('now', ?)"
+                    (str "-" retention-days " days")])
+    (let [row (jdbc/execute-one! conn
+                                 ["SELECT changes() AS deleted_count"]
+                                 {:builder-fn rs/as-unqualified-lower-maps})]
+      (long (or (:deleted_count row) 0)))))

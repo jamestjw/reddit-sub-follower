@@ -54,7 +54,8 @@
 
       (if-not access-token
         (do
-          (log/error "Refresh response did not contain an access token. Body:" body)
+          (log/error {:event :reddit_token_refresh_missing_access_token
+                      :response-body body})
           (throw (ex-info "Could not refresh token" {:response-body body})))
 
         (do
@@ -65,8 +66,9 @@
       (let [error-data (ex-data e)
             status     (:status error-data)
             body       (:body error-data)]
-        (log/error "HTTP error occurred during token refresh, status:" status)
-        (log/error "Response Body:" body)
+        (log/error {:event :reddit_token_refresh_http_error
+                    :status status
+                    :response-body body})
         ;; Re-throw the exception or return the original token to signal failure
         (throw (ex-info "Failed to refresh token" {:status status :body body} e))))))
 
@@ -90,21 +92,30 @@
                 (doseq [post (map :data (-> body :children reverse))]
                   (when (filter-fn (:name post) (:title post))
                     (output-fn post)))
-                (log/infof "Num posts: %d, Last seen (%s): %s" num-posts subreddit-name new-last-seen)
+                (log/info {:event :reddit_posts_fetched
+                           :subreddit subreddit-name
+                           :num-posts num-posts
+                           :new-last-seen new-last-seen})
                 [token new-last-seen])
               (catch java.io.IOException e
-                (log/errorf "caught connection exception: %s\n" (.getMessage e))
+                (log/error {:event :reddit_fetch_connection_error
+                            :subreddit subreddit-name
+                            :error-message (.getMessage e)
+                            :retry-count num-retries})
                 (if (< num-retries 3)
-                  (do (log/error "retrying...\n") (fetch token (+ 1 num-retries)))
+                  (fetch token (+ 1 num-retries))
                   [token last-seen]))
               (catch Exception e
                 (let [error-data (ex-data e)
                       status (:status error-data)]
                   (if (or (= 401 status) (= 403 status))
                     (do
-                      (log/info "Token expired, refreshing...")
+                      (log/info {:event :reddit_token_expired
+                                 :subreddit subreddit-name
+                                 :status status})
                       (let [new-token (refresh-reddit-token token)]
-                        (log/info "Successfully got new token" new-token)
+                        (log/info {:event :reddit_token_refreshed
+                                   :subreddit subreddit-name})
                         (fetch new-token 0)))
                     (throw (ex-info (str "Unexpected error: " (.getMessage e))
                                     {:status status
