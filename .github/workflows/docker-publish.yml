@@ -56,3 +56,7 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # Pull cached layers from GitHub Actions cache so new CI runners can reuse prior builds.
+          cache-from: type=gha
+          # Persist all useful layers (including intermediate ones) back to GHA for future runs.
+          cache-to: type=gha,mode=max
