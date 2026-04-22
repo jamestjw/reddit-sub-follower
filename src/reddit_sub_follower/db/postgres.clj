@@ -2,10 +2,14 @@
   (:require [next.jdbc :as jdbc]
             [next.jdbc.sql :as sql]
             [next.jdbc.result-set :as rs]
-            [reddit-sub-follower.configs :as configs]
-            [reddit-sub-follower.utils :as utils])
+            [reddit-sub-follower.configs :as configs])
   (:import (com.zaxxer.hikari HikariConfig HikariDataSource)
-           (java.time OffsetDateTime)))
+           (java.time Instant LocalDateTime OffsetDateTime ZoneOffset)
+           (java.time.format DateTimeFormatter)
+           (java.sql Timestamp)))
+
+(def postgres-ts-formatter
+  (DateTimeFormatter/ofPattern "yyyy-MM-dd HH:mm:ss[.SSSSSS]"))
 
 (defn- ->datasource []
   (let [config (doto (HikariConfig.)
@@ -87,9 +91,12 @@ $$;"]))
                                {:builder-fn rs/as-unqualified-lower-maps})]
     (when-let [updated-at (:updated_at row)]
       (cond
-        (instance? java.time.Instant updated-at) updated-at
+        (instance? Instant updated-at) updated-at
         (instance? OffsetDateTime updated-at) (.toInstant ^OffsetDateTime updated-at)
-        :else (utils/parse-timestamp (str updated-at) "yyyy-MM-dd HH:mm:ss")))))
+        (instance? LocalDateTime updated-at) (.toInstant ^LocalDateTime updated-at ZoneOffset/UTC)
+        (instance? Timestamp updated-at) (.toInstant ^Timestamp updated-at)
+        :else (-> (LocalDateTime/parse (str updated-at) postgres-ts-formatter)
+                  (.toInstant ZoneOffset/UTC))))))
 
 (defn update-last-seen! [subreddit-name last-seen-id]
   (jdbc/execute-one! @datasource
