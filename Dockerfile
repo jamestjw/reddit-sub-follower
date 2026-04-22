@@ -6,6 +6,7 @@ COPY deps.edn build.clj ./
 RUN clj -T:build clean
 
 COPY src ./src
+COPY resources ./resources
 RUN clj -T:build uber
 
 FROM eclipse-temurin:21-jre-jammy
