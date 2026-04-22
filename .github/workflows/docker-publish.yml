@@ -5,6 +5,7 @@ name: Docker Publish
 on:
   push:
     branches: ["main"]
+    tags: ["v*.*.*"]
 
 env:
   IMAGE_NAME: ghcr.io/${{ github.repository }}
@@ -35,14 +36,23 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Extract Docker metadata (tags, labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
           context: .
-          # STEP 3: ADDED - Specify the platforms to build for
           platforms: linux/amd64,linux/arm64
           push: true
-          # Tags the image with the latest commit SHA and a "latest" tag
-          tags: |
-            ${{ env.IMAGE_NAME }}:${{ github.sha }}
-            ${{ env.IMAGE_NAME }}:latest
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
