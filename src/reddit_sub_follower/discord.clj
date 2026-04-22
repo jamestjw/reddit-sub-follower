@@ -51,5 +51,5 @@
                               :max-attempts webhook-max-attempts
                               :body body
                               :parsed-body (parse-json-safe body)}]
-              (log/error "Discord webhook delivery failed after retries" error-data)
+              (log/error error-data)
               (throw (ex-info "Discord webhook request failed" error-data)))))))))

@@ -25,12 +25,11 @@
               (output-fn post)
               (db/add-seen-post! (:name post) subreddit-name)
               (catch Exception e
-                (log/error "Failed to process post notification"
-                           {:event :post_notification_failed
+                (log/error {:event :post_notification_failed
                             :subreddit subreddit-name
                             :post-id (:name post)
-                            :message (.getMessage e)
-                            :details (ex-data e)}))))]
+                            :error-message (.getMessage e)
+                            :error-details (ex-data e)}))))]
     (let [prev-last-seen
           (if (no-update-for-too-long? subreddit-name)
             nil ; Try fetching latest
@@ -52,11 +51,10 @@
             (try
               (do_one_subreddit token subreddit-name output-fn)
               (catch Exception e
-                (log/error "Failed to scrape"
-                           {:event :subreddit_scrape_failed
+                (log/error {:event :subreddit_scrape_failed
                             :subreddit subreddit-name
-                            :message (.getMessage e)
-                            :details (ex-data e)})
+                            :error-message (.getMessage e)
+                            :error-details (ex-data e)})
                 token)))
           token
           configs/subreddit-names))
