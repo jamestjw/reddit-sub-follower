@@ -4,8 +4,14 @@
    [clojure.string :as str]))
 
 (def cache-directory (or (System/getenv "CACHE_DIRECTORY") "./"))
+(def database-backend (or (System/getenv "DATABASE_BACKEND") "sqlite"))
 (def db-file (or (System/getenv "DB_FILE")
                  (utils/join-paths cache-directory ".cache.db")))
+(def database-host (System/getenv "DATABASE_HOST"))
+(def database-port (System/getenv "DATABASE_PORT"))
+(def database-name (System/getenv "DATABASE_NAME"))
+(def database-user (System/getenv "DATABASE_USER"))
+(def database-password (System/getenv "DATABASE_PASSWORD"))
 (def oauth-access-token-file (utils/join-paths cache-directory ".accesstoken"))
 (def oauth-refresh-token-file (utils/join-paths cache-directory ".refreshtoken"))
 
@@ -55,5 +61,18 @@
     (throw (new Exception "missing access token")))
   (when-not oauth-redirect-uri
     (throw (new Exception "missing redirect uri")))
+  (when-not (#{"sqlite" "postgres"} database-backend)
+    (throw (new Exception "invalid DATABASE_BACKEND, expected one of: sqlite, postgres")))
+  (when (= database-backend "postgres")
+    (when-not database-host
+      (throw (new Exception "missing database host")))
+    (when-not database-port
+      (throw (new Exception "missing database port")))
+    (when-not database-name
+      (throw (new Exception "missing database name")))
+    (when-not database-user
+      (throw (new Exception "missing database user")))
+    (when-not database-password
+      (throw (new Exception "missing database password"))))
   (when-not discord-webhook-url
     (throw (new Exception "missing discord webhook url"))))

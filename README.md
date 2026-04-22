@@ -2,6 +2,13 @@
 
 ## How to run
 
+### Database backend
+
+`DATABASE_BACKEND` controls which DB implementation is used.
+
+- `sqlite` (default): set `DB_FILE`
+- `postgres`: set `DATABASE_HOST`, `DATABASE_PORT`, `DATABASE_NAME`, `DATABASE_USER`, `DATABASE_PASSWORD`
+
 With REPL
 ```bash
 dotenv clj -- -M:run

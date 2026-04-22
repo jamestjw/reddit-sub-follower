@@ -1,127 +1,47 @@
 (ns reddit-sub-follower.db
-  (:require [next.jdbc :as jdbc]
-            [next.jdbc.sql :as sql]
-            [reddit-sub-follower.configs :as configs]
-            [taoensso.timbre :as log]
-            [reddit-sub-follower.utils :as utils])
-  (:import (com.zaxxer.hikari HikariConfig HikariDataSource)))
+  (:require [reddit-sub-follower.configs :as configs]
+            [reddit-sub-follower.db.sqlite :as sqlite]
+            [reddit-sub-follower.db.postgres :as postgres]))
 
-;; --- Database Configuration ---
-(defn- ->datasource
-  "Creates a HikariCP pooled connection datasource."
-  [db-file-path]
-  (let [config (doto (HikariConfig.)
-                 (.setJdbcUrl (str "jdbc:sqlite:" db-file-path))
-                 ;; Add other pool options here if needed
-                 (.setMaximumPoolSize 5))]
-    (HikariDataSource. config)))
+(def ^:private implementations
+  {"sqlite" {:init-db! sqlite/init-db!
+             :load-all-last-seen sqlite/load-all-last-seen
+             :get-last-seen-for-subreddit sqlite/get-last-seen-for-subreddit
+             :get-updated-at-for-subreddit sqlite/get-updated-at-for-subreddit
+             :update-last-seen! sqlite/update-last-seen!
+             :add-seen-post! sqlite/add-seen-post!
+             :post-seen? sqlite/post-seen?}
+   "postgres" {:init-db! postgres/init-db!
+               :load-all-last-seen postgres/load-all-last-seen
+               :get-last-seen-for-subreddit postgres/get-last-seen-for-subreddit
+               :get-updated-at-for-subreddit postgres/get-updated-at-for-subreddit
+               :update-last-seen! postgres/update-last-seen!
+               :add-seen-post! postgres/add-seen-post!
+               :post-seen? postgres/post-seen?}})
 
-;; Use a delay to create the datasource only when it's first needed.
-(defonce datasource (delay (->datasource configs/db-file)))
+(defn- impl []
+  (or (get implementations configs/database-backend)
+      (throw (ex-info "Unsupported DATABASE_BACKEND"
+                      {:database-backend configs/database-backend
+                       :supported-backends (keys implementations)}))))
 
-(defn ensure-trigger-exists
-  "Checks if a trigger exists in the SQLite DB, and creates it if it doesn't."
-  [trigger-name create-trigger-sql]
-  (let [existing-trigger (sql/query @datasource
-                                    ["SELECT name FROM sqlite_master WHERE type='trigger' AND name=?"
-                                     trigger-name])]
+(defn init-db! []
+  ((:init-db! (impl))))
 
-    (if (empty? existing-trigger)
-      (do
-        (log/info (str "Trigger '" trigger-name "' not found. Creating it..."))
-        (jdbc/execute! @datasource [create-trigger-sql]))
-      (log/info (str "Trigger '" trigger-name "' already exists. Skipping.")))))
+(defn load-all-last-seen []
+  ((:load-all-last-seen (impl))))
 
-;; --- Database Initialization ---
-(defn init-db!
-  "Initializes the database. Creates the necessary tables if they don't exist."
-  []
-  (jdbc/execute! @datasource
-                 ["
-CREATE TABLE IF NOT EXISTS subreddit_last_seen (
-  subreddit_name TEXT PRIMARY KEY NOT NULL,
-  last_seen_id   TEXT NOT NULL,
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-)"])
-  (jdbc/execute! @datasource ["
-CREATE TABLE IF NOT EXISTS seen_posts (
-  post_id TEXT NOT NULL,
-  subreddit_name TEXT NOT NULL,
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (post_id, subreddit_name)
-)"])
-  (ensure-trigger-exists "update_subreddit_last_seen_updated_at_trigger"
-                         "
-CREATE TRIGGER update_subreddit_last_seen_updated_at_trigger
-AFTER UPDATE ON subreddit_last_seen
-BEGIN
-   UPDATE subreddit_last_seen
-   SET updated_at=STRFTIME('%Y-%m-%d %H:%M:%f', 'NOW')
-   WHERE subreddit_name = NEW.subreddit_name;
-END;"))
+(defn get-last-seen-for-subreddit [subreddit-name]
+  ((:get-last-seen-for-subreddit (impl)) subreddit-name))
 
-;; --- Data Access Functions ---
-(defn load-all-last-seen
-  "Loads the entire last-seen map from the database.
-  Returns a map like {'clojure' 't3_abcde', ...}"
-  []
-  (with-open [conn (jdbc/get-connection @datasource)]
-    (->> (sql/query conn ["SELECT subreddit_name, last_seen_id FROM subreddit_last_seen"])
-         ;; The result from the DB is like:
-         ;; ({:subreddit_name "clojure", :last_seen_id "t3_abcde"}, ...)
-         (reduce (fn [m {:keys [subreddit_name last_seen_id]}]
-                   (assoc m subreddit_name last_seen_id))
-                 {}))))
+(defn get-updated-at-for-subreddit [subreddit-name]
+  ((:get-updated-at-for-subreddit (impl)) subreddit-name))
 
-(defn get-last-seen-for-subreddit
-  "Fetches the last_seen_id for a given subreddit_name from the database.
-  Returns the ID as a string, or nil if not found."
-  [subreddit-name]
-  (let [result-row
-        (sql/query @datasource
-                   ["SELECT last_seen_id FROM subreddit_last_seen
-                     WHERE subreddit_name = ?"
-                    subreddit-name])]
-    (-> result-row first :subreddit_last_seen/last_seen_id)))
+(defn update-last-seen! [subreddit-name last-seen-id]
+  ((:update-last-seen! (impl)) subreddit-name last-seen-id))
 
-(defn get-updated-at-for-subreddit
-  "Fetches the updated_at timestamp for a subreddit.
-  Returns a java.time.Instant object, or nil if not found."
-  [subreddit-name]
-  (let [result-row
-        (sql/query @datasource
-                   ["SELECT strftime('%Y-%m-%d %H:%M:%S', updated_at) AS updated_at
-                    FROM subreddit_last_seen WHERE subreddit_name = ?"
-                    subreddit-name])]
-    (when-let [timestamp (-> result-row first :updated_at)]
-      (utils/parse-timestamp timestamp "yyyy-MM-dd HH:mm:ss"))))
+(defn add-seen-post! [post-id subreddit-name]
+  ((:add-seen-post! (impl)) post-id subreddit-name))
 
-(defn update-last-seen!
-  "Upserts a last-seen ID for a given subreddit."
-  [subreddit-name last-seen-id]
-  (jdbc/execute-one!
-   @datasource
-   ["
-    INSERT INTO subreddit_last_seen (subreddit_name, last_seen_id)
-    VALUES (?, ?)
-    ON CONFLICT(subreddit_name)
-    DO UPDATE SET
-    last_seen_id = excluded.last_seen_id;"
-    subreddit-name last-seen-id]))
-
-(defn add-seen-post!
-  "Adds a record of a seen post to the database."
-  [post-id subreddit-name]
-  (sql/insert! @datasource :seen_posts
-               {:post_id        post-id
-                :subreddit_name subreddit-name}))
-
-(defn post-seen?
-  "Checks if a post has been previously seen.
-  Returns true if the post_id exists for the given subreddit, false otherwise."
-  [post-id subreddit-name]
-  (let [result (sql/query @datasource
-                          ["SELECT 1 FROM seen_posts WHERE post_id = ? AND subreddit_name = ?"
-                           post-id subreddit-name])]
-    (not (empty? result))))
+(defn post-seen? [post-id subreddit-name]
+  ((:post-seen? (impl)) post-id subreddit-name))

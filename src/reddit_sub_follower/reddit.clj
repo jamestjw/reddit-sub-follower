@@ -74,45 +74,41 @@
   "Fetches new Reddit posts, processes them, and returns the latest post ID."
   [{:keys [token username subreddit-name last-seen filter-fn output-fn]}]
   (letfn [(fetch
-            ([token] (fetch token 0))
-            ([token num-retries]
-             (try
-               (let [url (format "https://oauth.reddit.com/r/%s/new" subreddit-name)
-                     user-agent (mk-user-agent username)
-                     headers {:user-agent user-agent}
-                     resp (http/get url {:oauth-token (:access-token token)
-                                         :headers headers
-                                         :query-params {:before last-seen :limit 100}})
-                     body (-> resp :body (json/parse-string true) :data)
-                     num-posts (-> body :children count)
-                     new-last-seen (if-some [post (-> body :children first)]
-                                     (-> post :data :name)
-                                     last-seen)]
-                 ;; Process posts in chronological order (oldest to newest)
-                 (doseq [post (map :data (-> body :children reverse))]
-                   (when (filter-fn (:name post) (:title post))
-                     (output-fn post)))
-
-                 (log/infof "Num posts: %d, Last seen (%s): %s" num-posts subreddit-name new-last-seen)
-                 ;; Return the ID of the newest post for the next iteration
-                 [token new-last-seen])
-               (catch java.io.IOException e
-                 (log/errorf "caught connection exception: %s\n" (.getMessage e))
-                 (if (< num-retries 3)
-                   (do (log/error "retrying...\n") (fetch token (+ 1 num-retries)))
-                   ;; On multiple errors, return the old last-seen ID to retry from the same point
-                   [token last-seen]))
-               (catch Exception e
-                 (let [error-data (ex-data e)
-                       status (:status error-data)]
-                   ;; Check if the error is a 401/403 and we haven't retried yet
-                   (if (or (= 401 status) (= 403 status))
-                     (do
-                       (log/info "Token expired, refreshing...")
-                       (let [new-token (refresh-reddit-token token)]
-                         (log/info "Successfully got new token" new-token)
-                         ; Retry while resetting the reset counter
-                         (fetch new-token)))
-                     (throw (new Exception (str "Unexpected error: " (.getMessage e))))))))))]
-
-    (fetch token)))
+            [token num-retries]
+            (try
+              (let [url (format "https://oauth.reddit.com/r/%s/new" subreddit-name)
+                    user-agent (mk-user-agent username)
+                    headers {:user-agent user-agent}
+                    resp (http/get url {:oauth-token (:access-token token)
+                                        :headers headers
+                                        :query-params {:before last-seen :limit 100}})
+                    body (-> resp :body (json/parse-string true) :data)
+                    num-posts (-> body :children count)
+                    new-last-seen (if-some [post (-> body :children first)]
+                                    (-> post :data :name)
+                                    last-seen)]
+                (doseq [post (map :data (-> body :children reverse))]
+                  (when (filter-fn (:name post) (:title post))
+                    (output-fn post)))
+                (log/infof "Num posts: %d, Last seen (%s): %s" num-posts subreddit-name new-last-seen)
+                [token new-last-seen])
+              (catch java.io.IOException e
+                (log/errorf "caught connection exception: %s\n" (.getMessage e))
+                (if (< num-retries 3)
+                  (do (log/error "retrying...\n") (fetch token (+ 1 num-retries)))
+                  [token last-seen]))
+              (catch Exception e
+                (let [error-data (ex-data e)
+                      status (:status error-data)]
+                  (if (or (= 401 status) (= 403 status))
+                    (do
+                      (log/info "Token expired, refreshing...")
+                      (let [new-token (refresh-reddit-token token)]
+                        (log/info "Successfully got new token" new-token)
+                        (fetch new-token 0)))
+                    (throw (ex-info (str "Unexpected error: " (.getMessage e))
+                                    {:status status
+                                     :subreddit-name subreddit-name
+                                     :error-data error-data}
+                                    e)))))))]
+    (fetch token 0)))
