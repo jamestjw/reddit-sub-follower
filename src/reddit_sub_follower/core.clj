@@ -1,29 +1,13 @@
 (ns reddit-sub-follower.core
   (:gen-class)
   (:require
-   [clj-http.client :as http]
-   [cheshire.core :as json]
    [taoensso.timbre :as log]
+   [reddit-sub-follower.discord :as discord]
    [reddit-sub-follower.reddit :as reddit]
    [reddit-sub-follower.configs :as configs]
    [reddit-sub-follower.db :as db]))
 
 (import '[java.time Instant Duration])
-
-(defn discord-msg-formatter [post]
-  (let [title (:title post)
-        link (str "https://www.reddit.com" (:permalink post))]
-    (format "%s\n%s" title link)))
-
-(defn send-discord-webhook! [message]
-  (let [resp (http/post configs/discord-webhook-url
-                        {:headers {"Content-Type" "application/json"}
-                         :body (json/generate-string {:content message})
-                         :throw-exceptions false})]
-    (when-not (<= 200 (:status resp) 299)
-      (throw (ex-info "Discord webhook request failed"
-                      {:status (:status resp)
-                       :body (:body resp)})))))
 
 (defn no-update-for-too-long? [subreddit-name]
   (let [updated-at (db/get-updated-at-for-subreddit subreddit-name)]
@@ -37,8 +21,16 @@
             (and (configs/scrape-query-filter title)
                  (not (db/post-seen? id subreddit-name))))
           (handle-post [post]
-            (do (output-fn post)
-                (db/add-seen-post! (:name post) subreddit-name)))]
+            (try
+              (output-fn post)
+              (db/add-seen-post! (:name post) subreddit-name)
+              (catch Exception e
+                (log/error "Failed to process post notification"
+                           {:event :post_notification_failed
+                            :subreddit subreddit-name
+                            :post-id (:name post)
+                            :message (.getMessage e)
+                            :details (ex-data e)}))))]
     (let [prev-last-seen
           (if (no-update-for-too-long? subreddit-name)
             nil ; Try fetching latest
@@ -60,10 +52,11 @@
             (try
               (do_one_subreddit token subreddit-name output-fn)
               (catch Exception e
-                (log/error e "Failed to scrape"
-                           subreddit-name
-                           "message=" (.getMessage e)
-                           "details=" (pr-str (ex-data e)))
+                (log/error "Failed to scrape"
+                           {:event :subreddit_scrape_failed
+                            :subreddit subreddit-name
+                            :message (.getMessage e)
+                            :details (ex-data e)})
                 token)))
           token
           configs/subreddit-names))
@@ -72,7 +65,7 @@
   [& args]
   (configs/validate-configs!)
   (let [reddit-token (reddit/mk-token)
-        output-fn #(send-discord-webhook! (discord-msg-formatter %))
+        output-fn #(discord/send-webhook! configs/discord-webhook-url (discord/msg-formatter %))
         run-once? (some #{"--once" "-1"} args)]
     (db/init-db!)
     (if run-once?
