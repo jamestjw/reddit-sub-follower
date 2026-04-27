@@ -1,11 +1,12 @@
 (ns reddit-sub-follower.core
   (:gen-class)
   (:require
-   [taoensso.timbre :as log]
-   [reddit-sub-follower.discord :as discord]
-   [reddit-sub-follower.reddit :as reddit]
-   [reddit-sub-follower.configs :as configs]
-   [reddit-sub-follower.db :as db]))
+    [taoensso.timbre :as log]
+    [reddit-sub-follower.logging :as logging]
+    [reddit-sub-follower.discord :as discord]
+    [reddit-sub-follower.reddit :as reddit]
+    [reddit-sub-follower.configs :as configs]
+    [reddit-sub-follower.db :as db]))
 
 (import '[java.time Instant Duration])
 
@@ -81,6 +82,7 @@
 
 (defn -main
   [& args]
+  (logging/setup-logging!)
   (configs/validate-configs!)
   (let [reddit-token (reddit/mk-token)
         output-fn #(discord/send-webhook! configs/discord-webhook-url (discord/msg-formatter %))
